@@ -673,14 +673,22 @@ document.querySelectorAll('.genre-btn').forEach(b=>{
 async function callLLM(sys, usr) {
   if (state.llmProvider==='gemini' || !sKeys.claude) {
     if (!sKeys.gemini) throw new Error('請先在「API 設定」填入 Gemini API Key');
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${LLM_MODEL}:generateContent?key=${sKeys.gemini}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${LLM_MODEL}:generateContent`;
     const r = await fetch(url, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ system_instruction:{parts:[{text:sys}]}, contents:[{role:'user',parts:[{text:usr}]}] })
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-goog-api-key':sKeys.gemini},
+      body:JSON.stringify({
+        system_instruction:{parts:[{text:sys}]},
+        contents:[{role:'user',parts:[{text:usr}]}],
+        generationConfig:{ thinkingConfig:{ thinkingBudget:0 } }
+      })
     });
     const d = await r.json();
     if (d.error) throw new Error('Gemini 錯誤：'+d.error.message);
-    return d.candidates[0].content.parts[0].text;
+    // Handle both thinking and non-thinking response parts
+    const parts = d.candidates[0].content.parts;
+    const textPart = parts.find(p => p.text && !p.thought);
+    return textPart ? textPart.text : parts[parts.length-1].text;
   } else {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method:'POST',
@@ -834,7 +842,7 @@ async function genImg(idx) {
     // Generate 2 candidates with separate calls (API generates 1 image per call)
     const candidates = [];
     for (let ci = 0; ci < 2; ci++) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${IMG_MODEL}:generateContent?key=${key}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${IMG_MODEL}:generateContent`;
       const body = {
         contents: [{ role:'user', parts:[{ text: prompt }] }],
         generationConfig: {
@@ -842,7 +850,7 @@ async function genImg(idx) {
           aspectRatio: '4:3'
         }
       };
-      const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+      const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json','x-goog-api-key':key}, body:JSON.stringify(body) });
       const d = await r.json();
       if (d.error) throw new Error(d.error.message);
 
