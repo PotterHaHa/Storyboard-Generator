@@ -1002,50 +1002,50 @@ async function genImg(idx) {
     // Build image prompt
     const prompt = buildImgPrompt(shot);
 
-    // Find @mentioned characters and collect their reference images
+    // ── Character Reference: max fidelity ──
     const mentionedChars = getMentionedChars((shot.description||'') + ' ' + (shot.scene||''));
     console.log('[角色偵測]', shot.description, '→ 找到角色:', mentionedChars.map(c=>'@'+c.tag));
+
+    // Build reference image parts with per-character labels (max 4 chars x 3 imgs)
     const refImageParts = [];
-    for (const char of mentionedChars) {
-      if (char.images) {
-        for (const imgDataUrl of char.images) {
-          if (!imgDataUrl) continue;
-          // Parse data URL: data:image/jpeg;base64,xxxx
+    const charDescriptions = [];
+    for (const char of mentionedChars.slice(0, 4)) {
+      const charImgs = (char.images || []).filter(Boolean);
+      const charLabel = '@' + char.tag + (char.name ? '（' + char.name + '）' : '');
+      if (charImgs.length > 0) {
+        refImageParts.push({ text: '以下是角色 ' + charLabel + ' 的參考圖，請嚴格保持此角色的臉部、髮型、服裝特徵：' });
+        for (const imgDataUrl of charImgs) {
           const match = imgDataUrl.match(/^data:([^;]+);base64,(.+)$/);
-          if (match) {
-            refImageParts.push({ inlineData: { mimeType: match[1], data: match[2] } });
-          }
+          if (match) refImageParts.push({ inlineData: { mimeType: match[1], data: match[2] } });
         }
+        if (char.desc) refImageParts.push({ text: charLabel + ' 外觀補充：' + char.desc });
       }
+      charDescriptions.push(charLabel + '：' + (char.desc || '請參考上方參考圖') + (charImgs.length > 0 ? '（' + charImgs.length + '張參考圖）' : ''));
     }
+    console.log('[參考圖數量]', refImageParts.filter(p => p.inlineData).length, '張');
 
-    // Build character context string for prompt
-    console.log('[參考圖數量]', refImageParts.length, '張');
-    let charContext = '';
-    if (mentionedChars.length > 0) {
-      charContext = '\n角色說明：' + mentionedChars.map(c =>
-        `@${c.tag}（${c.name || ''}${c.desc ? '，' + c.desc : ''}）`
-      ).join('；');
-      if (refImageParts.length > 0) {
-        charContext += '\n請以上方參考圖中的角色外觀為準，保持角色特徵一致。';
-      }
-    }
+    const hasRefImgs = refImageParts.some(p => p.inlineData);
+    const charBlock = charDescriptions.length > 0 ? '\n\n【角色設定】\n' + charDescriptions.join('\n') : '';
+    const consistencyInstr = hasRefImgs
+      ? '\n\n【角色一致性指示】必須以上方參考圖為準，精確還原臉部特徵、髮型、膚色、服裝。角色外觀不得改變，只有場景和姿勢可以變化。臉部必須清晰可辨識。'
+      : '';
+    const fullPrompt = prompt + charBlock + consistencyInstr;
 
-    const fullPrompt = prompt + charContext;
-
-    // Generate 2 candidates with separate calls
+    // Generate 2 candidates
     const candidates = [];
     for (let ci = 0; ci < 2; ci++) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${IMG_MODEL}:generateContent`;
-      // Build parts: ref images first, then prompt text
-      const userParts = [...refImageParts, { text: fullPrompt }];
+      const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + IMG_MODEL + ':generateContent';
+      const userParts = hasRefImgs
+        ? [...refImageParts, { text: '\n\n【場景指令】\n' + fullPrompt }]
+        : [{ text: fullPrompt }];
       const body = {
-        contents: [{ role:'user', parts: userParts }],
+        contents: [{ role: 'user', parts: userParts }],
         generationConfig: {
-          responseModalities: ['TEXT','IMAGE']
+          responseModalities: ['TEXT', 'IMAGE'],
+          thinkingConfig: { thinkingLevel: 'high' }
         }
       };
-      const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json','x-goog-api-key':key}, body:JSON.stringify(body) });
+            const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json','x-goog-api-key':key}, body:JSON.stringify(body) });
       const d = await r.json();
       if (d.error) throw new Error(d.error.message);
 
@@ -1077,13 +1077,20 @@ async function genImg(idx) {
 
 function buildImgPrompt(shot) {
   const parts = [];
-  if (shot.scene) parts.push(shot.scene);
-  if (shot.description) parts.push(shot.description);
-  if (shot.cameraType) parts.push(shot.cameraType+'構圖');
-  if (shot.cameraAngle && shot.cameraAngle!=='平視') parts.push(shot.cameraAngle+'拍攝');
-  if (shot.cameraMove && shot.cameraMove!=='靜止') parts.push(shot.cameraMove+'鏡頭運動');
-  parts.push('電影感畫面，4:3比例，高品質，寫實風格');
-  return '請生成一張分鏡示意圖：' + parts.join('，');
+  if (shot.scene) parts.push('場景：' + shot.scene);
+  if (shot.description) parts.push('畫面內容：' + shot.description);
+  if (shot.dialogue) parts.push('對白／情境：' + shot.dialogue);
+  if (shot.sound) parts.push('音效氛圍：' + shot.sound);
+
+  const camMap = {'大遠景':'超廣角大遠景構圖','遠景':'遠景構圖人物全身可見','中景':'中景構圖人物上半身為主','近景':'近景人物臉部清晰','特寫':'特寫鏡頭臉部填滿畫面'};
+  const angMap = {'俯角':'高角度俯拍','仰角':'低角度仰拍帶壓迫感','傾斜':'傾斜構圖增加動感','平視':'水平視角'};
+  const movMap = {'推':'鏡頭推進','拉':'鏡頭拉遠','橫移':'鏡頭橫向移動','跟拍':'跟隨角色移動','升':'鏡頭上升','降':'鏡頭下降','環繞':'環繞主體拍攝','靜止':''};
+
+  const cam = [camMap[shot.cameraType], angMap[shot.cameraAngle], movMap[shot.cameraMove]].filter(Boolean).join('，');
+  if (cam) parts.push('攝影方式：' + cam);
+
+  parts.push('畫質要求：電影級構圖，專業打光，高細節高解析度，無文字浮水印，單一靜態分鏡畫面');
+  return parts.join('\n');
 }
 
 async function generateAllImages() {
