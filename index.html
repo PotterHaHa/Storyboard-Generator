@@ -239,6 +239,79 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 .export-table td{padding:8px 10px;border-bottom:1px solid var(--border);color:var(--text2);vertical-align:top}
 .export-table td:first-child{color:var(--accent);font-family:var(--font-mono);font-size:11px;white-space:nowrap}
 .divider-line{border:none;border-top:1px solid var(--border);margin:1.5rem 0}
+
+/* ── DRAG HANDLE ── */
+.drag-handle{width:28px;display:flex;align-items:center;justify-content:center;cursor:grab;color:var(--text3);font-size:16px;flex-shrink:0;padding:0 4px;border-right:1px solid var(--border);background:var(--surface2);touch-action:none;user-select:none}
+.drag-handle:active{cursor:grabbing}
+.shot-card.dragging{opacity:.4;border:2px dashed var(--accent)}
+.shot-card.drag-over{border-top:3px solid var(--accent)}
+.shot-card.drag-over-bottom{border-bottom:3px solid var(--accent)}
+
+/* ── MOBILE RWD ── */
+@media (max-width:640px){
+  .main{padding:1rem .75rem 3rem}
+  .panel-title{font-size:1.5rem}
+  .steps-bar{padding:0 .5rem}
+  .step-btn{padding:10px 10px;font-size:10px;gap:5px}
+  .drive-bar{padding:.5rem .75rem;gap:.4rem;flex-wrap:wrap}
+  .drive-bar .project-name-label{display:none}
+  .topbar{padding:0 .75rem}
+
+  /* Shot card: stack vertically on mobile */
+  .shot-body{grid-template-columns:1fr}
+  .shot-image-area{border-right:none;border-bottom:1px solid var(--border);padding:8px;flex-direction:row;align-items:flex-start;gap:8px}
+  .shot-img-preview{width:100px;height:75px;flex-shrink:0}
+  .img-candidate-row{flex-wrap:wrap}
+
+  /* Shot fields: single column */
+  .shot-fields{grid-template-columns:1fr;gap:6px}
+  .shot-field.full{grid-column:1}
+
+  /* Char library */
+  .char-card-body{grid-template-columns:1fr}
+  .char-imgs{overflow-x:auto;padding-bottom:4px}
+
+  /* Genre grid */
+  .genre-grid{grid-template-columns:repeat(3,1fr)}
+
+  /* Actions row */
+  .actions-row{gap:.4rem}
+  .actions-row .btn{flex:1;justify-content:center;min-width:0;font-size:12px;padding:8px 8px}
+
+  /* Outline */
+  .outline-body textarea{min-height:90px}
+
+  /* Thumb grid */
+  .thumb-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
+
+  /* Image modal */
+  .img-modal-inner{padding:1rem}
+  .candidates-grid{grid-template-columns:1fr 1fr;gap:6px}
+
+  /* Key row */
+  .key-row{flex-direction:column}
+  .key-row input{width:100%}
+
+  /* Card */
+  .card{padding:1rem}
+
+  /* Provider tabs */
+  .provider-tabs{flex-wrap:wrap}
+
+  /* Shuffle */
+  .field-with-shuffle{gap:4px}
+  .shuffle-btn{width:36px;height:36px;font-size:17px}
+
+  /* Step 5 preview */
+  #fullPreviewList > div > div:last-child{grid-template-columns:80px 1fr}
+}
+
+@media (max-width:400px){
+  .step-btn span:last-child{display:none}
+  .step-btn .step-num{margin:0}
+  .genre-grid{grid-template-columns:repeat(2,1fr)}
+}
+
 </style>
 </head>
 <body>
@@ -810,7 +883,12 @@ async function generateShots() {
 
 function renderShots() {
   const c=document.getElementById('shotsContainer'); c.innerHTML='';
-  state.shots.forEach((shot,i)=>{ c.appendChild(makeInsertZone(i)); c.appendChild(makeShotCard(shot,i)); });
+  state.shots.forEach((shot,i)=>{
+    c.appendChild(makeInsertZone(i));
+    const card = makeShotCard(shot,i);
+    c.appendChild(card);
+    initDragOnCard(card, i);
+  });
   c.appendChild(makeInsertZone(state.shots.length));
 }
 
@@ -827,8 +905,11 @@ function makeShotCard(shot, i) {
     : `<div class="shot-img-placeholder"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg><span>點擊生成<br>示意圖</span></div>`;
   const candHtml = shot.candidates?.length
     ? `<div class="img-candidate-row">${shot.candidates.map((c,ci)=>`<img class="img-candidate ${ci===shot.selectedCandidate?'selected':''}" src="${c}" onclick="selectCand(${i},${ci})">`).join('')}</div>` : '';
+  card.setAttribute('draggable','true');
+  card.dataset.idx = i;
   card.innerHTML=`
     <div class="shot-header">
+      <div class="drag-handle" title="拖曳排序">⠿</div>
       <span class="shot-num">SC-${String(i+1).padStart(3,'0')}</span>
       <div class="shot-header-actions">
         <button class="btn btn-ghost btn-sm" onclick="genImg(${i})">✦ 生圖</button>
@@ -1312,6 +1393,143 @@ document.addEventListener('click', () => {
   document.querySelectorAll('.at-menu').forEach(m => m.style.display='none');
 });
 
+
+
+// ─── DRAG & DROP SORT (Desktop + Touch) ───
+let dragSrcIdx = -1;
+let touchDragIdx = -1;
+let touchClone = null;
+let touchStartY = 0;
+
+function initDragOnCard(card, idx) {
+  // ── Desktop Drag ──
+  card.addEventListener('dragstart', e => {
+    // Only allow drag from handle
+    if (!e.target.classList.contains('drag-handle') && !e.target.closest('.drag-handle')) {
+      e.preventDefault(); return;
+    }
+    dragSrcIdx = idx;
+    card.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+  });
+
+  card.addEventListener('dragend', () => {
+    card.classList.remove('dragging');
+    document.querySelectorAll('.shot-card').forEach(c => {
+      c.classList.remove('drag-over','drag-over-bottom');
+    });
+    dragSrcIdx = -1;
+  });
+
+  card.addEventListener('dragover', e => {
+    e.preventDefault();
+    if (dragSrcIdx < 0 || dragSrcIdx === idx) return;
+    e.dataTransfer.dropEffect = 'move';
+    document.querySelectorAll('.shot-card').forEach(c => c.classList.remove('drag-over','drag-over-bottom'));
+    const rect = card.getBoundingClientRect();
+    const mid = rect.top + rect.height / 2;
+    if (e.clientY < mid) card.classList.add('drag-over');
+    else card.classList.add('drag-over-bottom');
+  });
+
+  card.addEventListener('dragleave', () => {
+    card.classList.remove('drag-over','drag-over-bottom');
+  });
+
+  card.addEventListener('drop', e => {
+    e.preventDefault();
+    if (dragSrcIdx < 0 || dragSrcIdx === idx) return;
+    collectState();
+    const rect = card.getBoundingClientRect();
+    const mid = rect.top + rect.height / 2;
+    const insertAfter = e.clientY >= mid;
+    let targetIdx = insertAfter ? idx + 1 : idx;
+    // Adjust for removal
+    if (dragSrcIdx < targetIdx) targetIdx--;
+    const moved = state.shots.splice(dragSrcIdx, 1)[0];
+    state.shots.splice(targetIdx, 0, moved);
+    renum();
+    renderShots();
+    dragSrcIdx = -1;
+  });
+
+  // ── Touch Drag ──
+  const handle = card.querySelector('.drag-handle');
+  if (!handle) return;
+
+  handle.addEventListener('touchstart', e => {
+    touchDragIdx = idx;
+    touchStartY = e.touches[0].clientY;
+
+    // Create ghost clone
+    touchClone = card.cloneNode(true);
+    touchClone.style.cssText = `position:fixed;left:${card.getBoundingClientRect().left}px;top:${card.getBoundingClientRect().top}px;width:${card.offsetWidth}px;opacity:.75;pointer-events:none;z-index:9999;border:2px solid var(--accent);border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.2)`;
+    document.body.appendChild(touchClone);
+    card.style.opacity = '.3';
+    e.preventDefault();
+  }, { passive: false });
+
+  handle.addEventListener('touchmove', e => {
+    if (touchDragIdx < 0 || !touchClone) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    const dy = touch.clientY - touchStartY;
+    const orig = document.querySelectorAll('.shot-card')[touchDragIdx];
+    if (orig) {
+      const origRect = orig.getBoundingClientRect();
+      touchClone.style.top = (origRect.top + dy) + 'px';
+    }
+
+    // Find which card we're over
+    document.querySelectorAll('.shot-card').forEach(c => c.classList.remove('drag-over','drag-over-bottom'));
+    const cards = [...document.querySelectorAll('.shot-card')];
+    for (const c of cards) {
+      const r = c.getBoundingClientRect();
+      if (touch.clientY >= r.top && touch.clientY <= r.bottom) {
+        const mid = r.top + r.height / 2;
+        if (touch.clientY < mid) c.classList.add('drag-over');
+        else c.classList.add('drag-over-bottom');
+        break;
+      }
+    }
+  }, { passive: false });
+
+  handle.addEventListener('touchend', e => {
+    if (touchDragIdx < 0) return;
+    const touch = e.changedTouches[0];
+
+    // Remove clone & reset styles
+    if (touchClone) { touchClone.remove(); touchClone = null; }
+    document.querySelectorAll('.shot-card').forEach(c => {
+      c.style.opacity = '';
+      c.classList.remove('drag-over','drag-over-bottom');
+    });
+
+    // Find drop target
+    const cards = [...document.querySelectorAll('.shot-card')];
+    let dropIdx = -1;
+    let insertAfter = false;
+    for (let i = 0; i < cards.length; i++) {
+      const r = cards[i].getBoundingClientRect();
+      if (touch.clientY >= r.top && touch.clientY <= r.bottom) {
+        dropIdx = i;
+        insertAfter = touch.clientY >= r.top + r.height / 2;
+        break;
+      }
+    }
+
+    if (dropIdx >= 0 && dropIdx !== touchDragIdx) {
+      collectState();
+      let targetIdx = insertAfter ? dropIdx + 1 : dropIdx;
+      if (touchDragIdx < targetIdx) targetIdx--;
+      const moved = state.shots.splice(touchDragIdx, 1)[0];
+      state.shots.splice(targetIdx, 0, moved);
+      renum();
+      renderShots();
+    }
+    touchDragIdx = -1;
+  });
+}
 
 // ─── INIT ───
 loadGIS();
