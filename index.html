@@ -846,7 +846,8 @@ async function genImg(idx) {
       const body = {
         contents: [{ role:'user', parts:[{ text: prompt }] }],
         generationConfig: {
-          responseModalities: ['TEXT','IMAGE']
+          responseModalities: ['TEXT','IMAGE'],
+          responseFormat: { image: { aspectRatio: '4:3' } }
         }
       };
       const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json','x-goog-api-key':key}, body:JSON.stringify(body) });
