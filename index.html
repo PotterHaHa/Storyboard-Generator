@@ -193,6 +193,17 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 .save-status.saved{color:var(--green)}
 
 
+
+/* ── SHUFFLE / IDEA BUTTON ── */
+.field-with-shuffle{display:flex;align-items:flex-start;gap:6px}
+.field-with-shuffle textarea{flex:1}
+.shuffle-btn{flex-shrink:0;width:32px;height:32px;border-radius:50%;background:var(--surface);border:1px solid var(--border);color:var(--text3);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;margin-top:0}
+.shuffle-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-bg)}
+.shuffle-btn.loading{animation:spin .7s linear infinite;pointer-events:none}
+.shuffle-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.shuffle-tag{background:var(--accent-bg);border:1px solid #bfdbfe;color:var(--accent);font-size:11px;padding:3px 10px;border-radius:20px;cursor:pointer;font-family:var(--font-mono);transition:all .15s}
+.shuffle-tag:hover{background:var(--accent);color:#fff}
+
 /* ── CHARACTER LIBRARY ── */
 .char-library{margin-top:1.25rem}
 .char-library-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem}
@@ -379,7 +390,11 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
     </div>
 
     <label class="field-label">角色設定</label>
-    <textarea id="characters" placeholder="描述主要角色：姓名、年齡、個性、外貌、動機…"></textarea>
+    <div class="field-with-shuffle">
+      <textarea id="characters" placeholder="描述主要角色：姓名、年齡、個性、外貌、動機…"></textarea>
+      <button class="shuffle-btn" id="shuffleChars" title="🎲 靈感提示" onclick="shuffleIdea('characters','角色設定')">🎲</button>
+    </div>
+    <div class="shuffle-tags" id="shuffleTags-characters"></div>
 
     <!-- CHARACTER LIBRARY -->
     <div class="char-library">
@@ -395,10 +410,18 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
     </div>
 
     <label class="field-label">世界觀與場景</label>
-    <textarea id="worldSetting" placeholder="故事發生的時間、地點、背景環境…"></textarea>
+    <div class="field-with-shuffle">
+      <textarea id="worldSetting" placeholder="故事發生的時間、地點、背景環境…"></textarea>
+      <button class="shuffle-btn" id="shuffleWorld" title="🎲 靈感提示" onclick="shuffleIdea('worldSetting','世界觀與場景')">🎲</button>
+    </div>
+    <div class="shuffle-tags" id="shuffleTags-worldSetting"></div>
 
     <label class="field-label">核心故事（你的原始構想）</label>
-    <textarea id="storyCore" style="min-height:130px" placeholder="用自己的話描述這個故事，發生了什麼，想傳達什麼…"></textarea>
+    <div class="field-with-shuffle">
+      <textarea id="storyCore" style="min-height:130px" placeholder="用自己的話描述這個故事，發生了什麼，想傳達什麼…"></textarea>
+      <button class="shuffle-btn" id="shuffleStory" title="🎲 靈感提示" onclick="shuffleIdea('storyCore','核心故事')">🎲</button>
+    </div>
+    <div class="shuffle-tags" id="shuffleTags-storyCore"></div>
 
     <label class="field-label">分鏡格數</label>
     <select id="shotCount">
@@ -479,15 +502,10 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
   <!-- STEP 5: 匯出 -->
   <div class="panel" id="panel5">
     <div class="panel-title">匯出分鏡表</div>
-    <div class="panel-sub">匯出 Excel 分鏡表並儲存專案至 Google Drive。</div>
+    <div class="panel-sub">完整腳本預覽，確認無誤後匯出 Excel 或儲存至 Google Drive。</div>
 
-    <div class="export-preview">
-      <h3>欄位預覽（前三格）</h3>
-      <table class="export-table">
-        <thead><tr><th>鏡頭編號</th><th>景別</th><th>攝影角度</th><th>攝影機運動</th><th>秒數</th><th>劇情描述</th><th>對白/旁白</th><th>聲音/音效</th><th>Seedance Prompt</th><th>備註</th></tr></thead>
-        <tbody id="exportPreviewBody"></tbody>
-      </table>
-    </div>
+    <!-- Full storyboard preview -->
+    <div id="fullPreviewContainer" style="margin-bottom:1.5rem"></div>
 
     <div class="notice">
       <strong>圖片說明：</strong>Excel 圖片欄位為 base64 資料 URL。完整圖片儲存於 Google Drive 的 JSON 專案檔，下次載入可完整還原。
@@ -1021,19 +1039,48 @@ function renderThumbs() {
 // ─── EXPORT ───
 function renderExportPreview() {
   collectState();
-  const tb=document.getElementById('exportPreviewBody');
-  tb.innerHTML=state.shots.slice(0,3).map((s,i)=>`
-    <tr>
-      <td>SC-${String(i+1).padStart(3,'0')}</td>
-      <td>${s.cameraType||''}</td><td>${s.cameraAngle||''}</td><td>${s.cameraMove||''}</td>
-      <td>${s.duration||''}s</td>
-      <td>${(s.description||'').slice(0,22)}${s.description?.length>22?'…':''}</td>
-      <td>${(s.dialogue||'').slice(0,15)||'—'}</td>
-      <td>${(s.sound||'').slice(0,15)||'—'}</td>
-      <td>${(s.seedancePrompt||'').slice(0,20)}…</td>
-      <td>${s.notes||'—'}</td>
-    </tr>`).join('');
-  if(state.shots.length>3) tb.innerHTML+=`<tr><td colspan="10" style="color:var(--text3);font-family:var(--font-mono);font-size:11px;padding:8px 10px">… 共 ${state.shots.length} 格</td></tr>`;
+  const container = document.getElementById('fullPreviewContainer');
+  if (!container) return;
+  if (!state.shots.length) {
+    container.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:1rem;text-align:center;border:1px dashed var(--border);border-radius:var(--radius)">尚無分鏡資料</div>';
+    return;
+  }
+
+  // Stats bar
+  const totalSecs = state.shots.reduce((a,s)=>a+(parseFloat(s.duration)||0),0);
+  const hasImg = state.shots.filter(s=>s.image).length;
+  container.innerHTML = `
+    <div style="display:flex;gap:1.5rem;padding:.75rem 1rem;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:1rem;font-size:12px;font-family:var(--font-mono);color:var(--text2)">
+      <span>📋 共 <strong style="color:var(--text)">${state.shots.length}</strong> 格分鏡</span>
+      <span>⏱ 預估總長 <strong style="color:var(--text)">${totalSecs}</strong> 秒</span>
+      <span>🖼 已生圖 <strong style="color:var(--text)">${hasImg}</strong> / ${state.shots.length} 格</span>
+      <span>🎭 角色 <strong style="color:var(--text)">${(state.characters_lib||[]).filter(c=>c.tag).length}</strong> 個</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:.6rem" id="fullPreviewList"></div>`;
+
+  const list = document.getElementById('fullPreviewList');
+  list.innerHTML = state.shots.map((s,i) => `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow)">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 14px;background:var(--surface2);border-bottom:1px solid var(--border)">
+        <span style="font-family:var(--font-mono);font-size:11px;color:var(--accent);letter-spacing:.1em">SC-${String(i+1).padStart(3,'0')}</span>
+        <span style="font-size:11px;color:var(--text3);font-family:var(--font-mono)">${s.cameraType||''} ｜ ${s.cameraAngle||''} ｜ ${s.cameraMove||''} ｜ ${s.duration||'?'}s</span>
+      </div>
+      <div style="display:grid;grid-template-columns:120px 1fr;gap:0">
+        <div style="border-right:1px solid var(--border);padding:8px;display:flex;align-items:center;justify-content:center;background:var(--surface2)">
+          ${s.image
+            ? `<img src="${s.image}" style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:3px">`
+            : `<div style="width:100%;aspect-ratio:4/3;background:var(--surface3);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text3);font-family:var(--font-mono)">無圖</div>`}
+        </div>
+        <div style="padding:10px 14px;display:flex;flex-direction:column;gap:5px">
+          <div style="font-size:12px;font-weight:500;color:var(--text)">${esc(s.scene||'（無場景描述）')}</div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.5">${esc(s.description||'')}</div>
+          ${s.dialogue ? `<div style="font-size:12px;color:var(--accent);border-left:2px solid var(--accent);padding-left:8px;margin-top:2px">${esc(s.dialogue)}</div>` : ''}
+          ${s.sound ? `<div style="font-size:11px;color:var(--text3);margin-top:2px">🔊 ${esc(s.sound)}</div>` : ''}
+          ${s.seedancePrompt ? `<div style="font-size:11px;color:var(--green);margin-top:2px;font-family:var(--font-mono)">▶ ${esc(s.seedancePrompt)}</div>` : ''}
+          ${s.notes ? `<div style="font-size:11px;color:var(--amber);margin-top:2px">📝 ${esc(s.notes)}</div>` : ''}
+        </div>
+      </div>
+    </div>`).join('');
 }
 
 async function exportExcel() {
@@ -1063,6 +1110,55 @@ async function exportExcel() {
   ws2['!cols']=[{wch:20},{wch:60}];
   XLSX.utils.book_append_sheet(wb, ws2, '專案資訊');
   XLSX.writeFile(wb, `${state.projectName||'storyboard'}_分鏡表.xlsx`);
+}
+
+
+
+// ─── IDEA SHUFFLE ───
+async function shuffleIdea(fieldId, fieldName) {
+  if (!sKeys.gemini && !sKeys.claude) { goStep(0); alert('請先設定 API Key'); return; }
+  const btn = document.getElementById('shuffle' + fieldId.charAt(0).toUpperCase() + fieldId.slice(1))
+    || event?.target;
+  const tagsContainer = document.getElementById('shuffleTags-' + fieldId);
+  if (btn) btn.classList.add('loading');
+  if (tagsContainer) tagsContainer.innerHTML = '<span style="font-size:11px;color:var(--text3);font-family:var(--font-mono)">生成靈感中…</span>';
+
+  const genre = state.genre || '電影劇情片';
+  const existingVal = document.getElementById(fieldId)?.value || '';
+
+  const sys = `你是創意劇本顧問，擅長為${genre}類型的故事提供靈感。請用繁體中文回覆。`;
+  const usr = `針對「${fieldName}」這個欄位，根據以下資訊生成5個簡短的靈感 hashtag（每個5字以內），供創作者參考。
+故事類型：${genre}
+現有內容：${existingVal || '（尚未填寫）'}
+其他欄位：角色=${document.getElementById('characters')?.value||''} 世界觀=${document.getElementById('worldSetting')?.value||''} 故事=${document.getElementById('storyCore')?.value||''}
+
+只回覆JSON陣列，5個短標籤，例如：["孤獨英雄","失憶偵探","末日倖存者","雙重身份","背叛與救贖"]
+不要加任何說明文字，只回覆純JSON陣列。`;
+
+  try {
+    const txt = await callLLM(sys, usr);
+    const clean = txt.replace(/```json|```/g,'').trim();
+    const tags = JSON.parse(clean);
+    if (tagsContainer && Array.isArray(tags)) {
+      tagsContainer.innerHTML = tags.map(tag =>
+        `<span class="shuffle-tag" onclick="appendToField('${fieldId}','${tag.replace(/'/g,"\'")}')">＋ ${tag}</span>`
+      ).join('');
+    }
+  } catch(e) {
+    if (tagsContainer) tagsContainer.innerHTML = `<span style="font-size:11px;color:var(--red)">生成失敗：${e.message}</span>`;
+  }
+  if (btn) btn.classList.remove('loading');
+}
+
+function appendToField(fieldId, tag) {
+  const ta = document.getElementById(fieldId);
+  if (!ta) return;
+  const sep = ta.value && !ta.value.endsWith('\n') ? '、' : '';
+  ta.value = ta.value + sep + tag;
+  ta.focus();
+  // Highlight the tag briefly
+  const tagEls = document.querySelectorAll(`#shuffleTags-${fieldId} .shuffle-tag`);
+  tagEls.forEach(el => { if (el.textContent.includes(tag)) { el.style.background='var(--accent)'; el.style.color='#fff'; } });
 }
 
 
