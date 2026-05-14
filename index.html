@@ -350,6 +350,21 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
   <div class="ctx-item danger" onclick="ctxAction('delete')">✕ 刪除此格</div>
 </div>
 
+<!-- Reorder Modal (Mobile) -->
+<div id="reorderModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:400;align-items:flex-end;justify-content:center">
+  <div style="background:var(--surface);border-radius:12px 12px 0 0;width:100%;max-width:560px;max-height:75vh;display:flex;flex-direction:column">
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+      <span style="font-weight:500;font-size:14px">排列分鏡順序</span>
+      <button onclick="closeReorderModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text3);padding:0 4px">✕</button>
+    </div>
+    <div id="reorderList" style="overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:6px"></div>
+    <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px">
+      <button class="btn btn-primary" style="flex:1" onclick="applyReorder()">✓ 確認排序</button>
+      <button class="btn btn-outline" onclick="closeReorderModal()">取消</button>
+    </div>
+  </div>
+</div>
+
 <!-- Topbar -->
 <div class="topbar">
   <div class="logo">Storyboard <em>GENERATOR</em></div>
@@ -548,6 +563,7 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
     <div class="actions-row" style="margin-top:1.5rem">
       <button class="btn btn-outline" onclick="goStep(2)">← 返回大綱</button>
       <button class="btn btn-outline" onclick="addShot()">＋ 新增分鏡</button>
+      <button class="btn btn-outline" id="reorderBtn" onclick="openReorderModal()" style="display:none">⇅ 排列順序</button>
       <button class="btn btn-primary" onclick="goStep(4)">前往生圖 →</button>
     </div>
   </div>
@@ -890,6 +906,9 @@ function renderShots() {
     initDragOnCard(card, i);
   });
   c.appendChild(makeInsertZone(state.shots.length));
+  // Show reorder btn on mobile
+  const rb = document.getElementById('reorderBtn');
+  if (rb) rb.style.display = (state.shots.length > 1 && window.innerWidth <= 640) ? '' : 'none';
 }
 
 function makeInsertZone(idx) {
@@ -912,7 +931,8 @@ function makeShotCard(shot, i) {
       <div class="drag-handle" title="拖曳排序">⠿</div>
       <span class="shot-num">SC-${String(i+1).padStart(3,'0')}</span>
       <div class="shot-header-actions">
-        <button class="btn btn-ghost btn-sm" onclick="genImg(${i})">✦ 生圖</button>
+        <button class="btn btn-ghost btn-sm" onclick="genImg(${i})" title="生成示意圖">✦ 生圖</button>
+        ${shot.image ? `<button class="btn btn-ghost btn-sm" onclick="regenImg(${i})" title="重新生成" style="color:var(--amber)">↻</button>` : ''}
         <button class="btn btn-ghost btn-sm" style="font-size:15px;padding:3px 7px" onclick="openCtx(event,${i})">⋯</button>
       </div>
     </div>
@@ -1404,13 +1424,13 @@ let touchStartY = 0;
 function initDragOnCard(card, idx) {
   // ── Desktop Drag ──
   card.addEventListener('dragstart', e => {
-    // Only allow drag from handle
-    if (!e.target.classList.contains('drag-handle') && !e.target.closest('.drag-handle')) {
-      e.preventDefault(); return;
-    }
+    // Must start from the drag handle
+    const fromHandle = e.target.classList.contains('drag-handle') || !!e.target.closest('.drag-handle');
+    if (!fromHandle) { e.preventDefault(); return; }
     dragSrcIdx = idx;
-    card.classList.add('dragging');
+    setTimeout(() => card.classList.add('dragging'), 0);
     e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(idx));
   });
 
   card.addEventListener('dragend', () => {
@@ -1453,82 +1473,125 @@ function initDragOnCard(card, idx) {
     dragSrcIdx = -1;
   });
 
-  // ── Touch Drag ──
+  // ── Touch: tap handle to open reorder modal on mobile ──
   const handle = card.querySelector('.drag-handle');
   if (!handle) return;
-
-  handle.addEventListener('touchstart', e => {
-    touchDragIdx = idx;
-    touchStartY = e.touches[0].clientY;
-
-    // Create ghost clone
-    touchClone = card.cloneNode(true);
-    touchClone.style.cssText = `position:fixed;left:${card.getBoundingClientRect().left}px;top:${card.getBoundingClientRect().top}px;width:${card.offsetWidth}px;opacity:.75;pointer-events:none;z-index:9999;border:2px solid var(--accent);border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.2)`;
-    document.body.appendChild(touchClone);
-    card.style.opacity = '.3';
-    e.preventDefault();
-  }, { passive: false });
-
-  handle.addEventListener('touchmove', e => {
-    if (touchDragIdx < 0 || !touchClone) return;
-    e.preventDefault();
-    const touch = e.touches[0];
-    const dy = touch.clientY - touchStartY;
-    const orig = document.querySelectorAll('.shot-card')[touchDragIdx];
-    if (orig) {
-      const origRect = orig.getBoundingClientRect();
-      touchClone.style.top = (origRect.top + dy) + 'px';
+  handle.addEventListener('click', e => {
+    if (window.innerWidth <= 640) {
+      e.stopPropagation();
+      openReorderModal();
     }
-
-    // Find which card we're over
-    document.querySelectorAll('.shot-card').forEach(c => c.classList.remove('drag-over','drag-over-bottom'));
-    const cards = [...document.querySelectorAll('.shot-card')];
-    for (const c of cards) {
-      const r = c.getBoundingClientRect();
-      if (touch.clientY >= r.top && touch.clientY <= r.bottom) {
-        const mid = r.top + r.height / 2;
-        if (touch.clientY < mid) c.classList.add('drag-over');
-        else c.classList.add('drag-over-bottom');
-        break;
-      }
-    }
-  }, { passive: false });
-
-  handle.addEventListener('touchend', e => {
-    if (touchDragIdx < 0) return;
-    const touch = e.changedTouches[0];
-
-    // Remove clone & reset styles
-    if (touchClone) { touchClone.remove(); touchClone = null; }
-    document.querySelectorAll('.shot-card').forEach(c => {
-      c.style.opacity = '';
-      c.classList.remove('drag-over','drag-over-bottom');
-    });
-
-    // Find drop target
-    const cards = [...document.querySelectorAll('.shot-card')];
-    let dropIdx = -1;
-    let insertAfter = false;
-    for (let i = 0; i < cards.length; i++) {
-      const r = cards[i].getBoundingClientRect();
-      if (touch.clientY >= r.top && touch.clientY <= r.bottom) {
-        dropIdx = i;
-        insertAfter = touch.clientY >= r.top + r.height / 2;
-        break;
-      }
-    }
-
-    if (dropIdx >= 0 && dropIdx !== touchDragIdx) {
-      collectState();
-      let targetIdx = insertAfter ? dropIdx + 1 : dropIdx;
-      if (touchDragIdx < targetIdx) targetIdx--;
-      const moved = state.shots.splice(touchDragIdx, 1)[0];
-      state.shots.splice(targetIdx, 0, moved);
-      renum();
-      renderShots();
-    }
-    touchDragIdx = -1;
   });
+}
+
+// ─── REORDER MODAL (Mobile) ───
+let reorderTempOrder = [];
+let reorderDragIdx = -1;
+
+function openReorderModal() {
+  collectState();
+  reorderTempOrder = state.shots.map((s, i) => i); // indices
+  renderReorderList();
+  const modal = document.getElementById('reorderModal');
+  modal.style.display = 'flex';
+  // Show reorder btn
+  document.getElementById('reorderBtn').style.display = '';
+}
+
+function closeReorderModal() {
+  document.getElementById('reorderModal').style.display = 'none';
+}
+
+function renderReorderList() {
+  const list = document.getElementById('reorderList');
+  list.innerHTML = reorderTempOrder.map((origIdx, pos) => {
+    const s = state.shots[origIdx];
+    return `<div class="reorder-item" data-pos="${pos}" draggable="true"
+        style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);cursor:grab;touch-action:none"
+        ondragstart="reorderDragStart(${pos})"
+        ondragover="reorderDragOver(event,${pos})"
+        ondrop="reorderDrop(${pos})"
+        ondragend="reorderDragEnd()">
+      <span style="font-size:18px;color:var(--text3)">⠿</span>
+      ${s.image ? `<img src="${s.image}" style="width:48px;height:36px;object-fit:cover;border-radius:3px;flex-shrink:0">` : `<div style="width:48px;height:36px;background:var(--surface2);border-radius:3px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text3)">無圖</div>`}
+      <div style="flex:1;min-width:0">
+        <div style="font-family:var(--font-mono);font-size:10px;color:var(--accent)">SC-${String(pos+1).padStart(3,'0')}</div>
+        <div style="font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.scene||s.description||'（空白）')}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <button onclick="reorderMove(${pos},-1)" style="background:none;border:none;cursor:pointer;font-size:14px;color:var(--text2);padding:2px 6px" ${pos===0?'disabled style="opacity:.3"':''}>▲</button>
+        <button onclick="reorderMove(${pos},1)" style="background:none;border:none;cursor:pointer;font-size:14px;color:var(--text2);padding:2px 6px" ${pos===reorderTempOrder.length-1?'disabled style="opacity:.3"':''}>▼</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Touch drag on reorder items
+  list.querySelectorAll('.reorder-item').forEach((item, pos) => {
+    let tStart = 0, tStartY = 0;
+    item.addEventListener('touchstart', e => {
+      tStart = pos; tStartY = e.touches[0].clientY;
+      item.style.background = 'var(--accent-bg)';
+    }, { passive: true });
+    item.addEventListener('touchmove', e => {
+      const dy = e.touches[0].clientY - tStartY;
+      const itemH = item.offsetHeight + 6;
+      const steps = Math.round(dy / itemH);
+      if (steps !== 0) {
+        const newPos = Math.max(0, Math.min(reorderTempOrder.length-1, tStart + steps));
+        if (newPos !== tStart) {
+          const moved = reorderTempOrder.splice(tStart, 1)[0];
+          reorderTempOrder.splice(newPos, 0, moved);
+          tStart = newPos;
+          tStartY = e.touches[0].clientY;
+          renderReorderList();
+        }
+      }
+    }, { passive: true });
+    item.addEventListener('touchend', () => {
+      item.style.background = '';
+    }, { passive: true });
+  });
+}
+
+function reorderMove(pos, dir) {
+  const newPos = pos + dir;
+  if (newPos < 0 || newPos >= reorderTempOrder.length) return;
+  const tmp = reorderTempOrder[pos];
+  reorderTempOrder[pos] = reorderTempOrder[newPos];
+  reorderTempOrder[newPos] = tmp;
+  renderReorderList();
+}
+
+function reorderDragStart(pos) { reorderDragIdx = pos; }
+function reorderDragEnd() { reorderDragIdx = -1; document.querySelectorAll('.reorder-item').forEach(i=>i.style.borderTop=''); }
+function reorderDragOver(e, pos) {
+  e.preventDefault();
+  document.querySelectorAll('.reorder-item').forEach(i=>i.style.borderTop='');
+  if (reorderDragIdx !== pos) e.currentTarget.style.borderTop = '2px solid var(--accent)';
+}
+function reorderDrop(pos) {
+  if (reorderDragIdx < 0 || reorderDragIdx === pos) return;
+  const moved = reorderTempOrder.splice(reorderDragIdx, 1)[0];
+  reorderTempOrder.splice(pos, 0, moved);
+  renderReorderList();
+}
+
+function applyReorder() {
+  collectState();
+  state.shots = reorderTempOrder.map(origIdx => state.shots[origIdx]);
+  renum();
+  renderShots();
+  closeReorderModal();
+}
+
+// ─── REGEN IMAGE ───
+async function regenImg(idx) {
+  // Clear existing image and regenerate
+  collectState();
+  state.shots[idx].image = null;
+  state.shots[idx].candidates = [];
+  state.shots[idx].selectedCandidate = 0;
+  await genImg(idx);
 }
 
 // ─── INIT ───
