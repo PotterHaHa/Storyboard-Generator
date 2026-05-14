@@ -192,6 +192,34 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 .save-status.saving{color:var(--amber)}
 .save-status.saved{color:var(--green)}
 
+
+/* ── CHARACTER LIBRARY ── */
+.char-library{margin-top:1.25rem}
+.char-library-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem}
+.char-library-header h4{font-size:13px;font-weight:500;color:var(--text)}
+.char-cards{display:flex;flex-direction:column;gap:.6rem}
+.char-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow)}
+.char-card-header{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface2);border-bottom:1px solid var(--border)}
+.char-tag{font-family:var(--font-mono);font-size:12px;font-weight:600;color:var(--accent);background:var(--accent-bg);padding:2px 8px;border-radius:4px;border:1px solid #bfdbfe}
+.char-card-body{padding:10px 12px;display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start}
+.char-imgs{display:flex;gap:5px;flex-wrap:wrap}
+.char-img-slot{width:64px;height:64px;border:1px dashed var(--border2);border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;position:relative;transition:border-color .15s;flex-shrink:0}
+.char-img-slot:hover{border-color:var(--accent)}
+.char-img-slot img{width:100%;height:100%;object-fit:cover}
+.char-img-slot .slot-label{font-size:9px;color:var(--text3);font-family:var(--font-mono);text-align:center;padding:2px}
+.char-img-slot .slot-del{position:absolute;top:2px;right:2px;width:16px;height:16px;background:var(--red);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;cursor:pointer;opacity:0;transition:opacity .15s}
+.char-img-slot:hover .slot-del{opacity:1}
+.char-fields{display:flex;flex-direction:column;gap:6px}
+.char-fields input,.char-fields textarea{font-size:12px;padding:6px 9px}
+.char-fields textarea{min-height:52px;resize:vertical}
+.char-del-btn{margin-left:auto;flex-shrink:0}
+
+/* @ mention autocomplete */
+.at-menu{position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-md);z-index:200;min-width:160px;padding:4px}
+.at-item{padding:6px 10px;font-size:12px;cursor:pointer;border-radius:4px;display:flex;align-items:center;gap:6px;color:var(--text2)}
+.at-item:hover{background:var(--accent-bg);color:var(--accent)}
+.at-item .at-tag{font-family:var(--font-mono);font-size:11px;color:var(--accent);font-weight:600}
+
 /* ── EXPORT ── */
 .export-preview{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;margin-bottom:1.25rem;overflow-x:auto;box-shadow:var(--shadow)}
 .export-preview h3{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;color:var(--text3);text-transform:uppercase;margin-bottom:.75rem}
@@ -353,6 +381,19 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
     <label class="field-label">角色設定</label>
     <textarea id="characters" placeholder="描述主要角色：姓名、年齡、個性、外貌、動機…"></textarea>
 
+    <!-- CHARACTER LIBRARY -->
+    <div class="char-library">
+      <div class="char-library-header">
+        <h4>🎭 角色參考圖庫 <span style="font-size:11px;color:var(--text3);font-weight:400;font-family:var(--font-mono)">（在分鏡描述中用 @代稱 引用角色）</span></h4>
+        <button class="btn btn-outline btn-sm" onclick="addCharacter()">＋ 新增角色</button>
+      </div>
+      <div class="char-cards" id="charCards">
+        <div style="font-size:12px;color:var(--text3);padding:12px;text-align:center;border:1px dashed var(--border);border-radius:var(--radius)">
+          尚未設定角色 — 點「新增角色」上傳三視圖與設定 @代稱
+        </div>
+      </div>
+    </div>
+
     <label class="field-label">世界觀與場景</label>
     <textarea id="worldSetting" placeholder="故事發生的時間、地點、背景環境…"></textarea>
 
@@ -474,7 +515,8 @@ let state = {
   user:null, accessToken:null, driveFolderId:null, currentFileId:null,
   projectName:'未命名專案', genre:'電影劇情片',
   characters:'', worldSetting:'', storyCore:'', shotCount:6,
-  acts:{1:'',2:'',3:''}, shots:[], llmProvider:'gemini'
+  acts:{1:'',2:'',3:''}, shots:[], llmProvider:'gemini',
+  characters_lib: []
 };
 let sKeys = { gemini:'', claude:'' }; // session only
 let ctxIdx=-1, imgModalIdx=-1, imgModalSel=0, tokenClient=null;
@@ -646,6 +688,8 @@ function restoreState() {
   document.getElementById('act2').value=state.acts?.[2]||'';
   document.getElementById('act3').value=state.acts?.[3]||'';
   document.querySelectorAll('.genre-btn').forEach(b=>b.classList.toggle('selected',b.dataset.genre===state.genre));
+  if (!state.characters_lib) state.characters_lib = [];
+  renderCharCards();
   updateProjName();
 }
 
@@ -734,7 +778,8 @@ async function generateShots() {
   collectState();
   const btn=document.querySelector('#panel2 .btn-primary'), ld=document.getElementById('loading2');
   ld.classList.add('show'); btn.disabled=true;
-  const sys=`你是專業分鏡師，將故事大綱拆解為具體分鏡腳本。每格要有強烈視覺感，適合${state.genre}風格。繁體中文回覆。`;
+  const charLibInfo = (state.characters_lib||[]).filter(c=>c.tag).map(c=>`@${c.tag}（${c.name||''}${c.desc?'，'+c.desc:''}）`).join('、');
+  const sys=`你是專業分鏡師，將故事大綱拆解為具體分鏡腳本。每格要有強烈視覺感，適合${state.genre}風格。繁體中文回覆。${charLibInfo?'\n角色代稱說明：'+charLibInfo+'。在劇情描述中請用 @代稱 引用角色（如 @小明、@主角A）。':''}`;
   const usr=`根據以下故事大綱，生成 ${state.shotCount} 格分鏡腳本。\n第一幕：${state.acts[1]}\n第二幕：${state.acts[2]}\n第三幕：${state.acts[3]}\n角色：${state.characters}\n世界觀：${state.worldSetting}\n只回覆JSON陣列：[{"scene":"場景(20字內)","cameraType":"景別(大遠景/遠景/中景/近景/特寫)","cameraAngle":"角度(平視/俯角/仰角/傾斜)","cameraMove":"運動(靜止/推/拉/橫移/跟拍/升/降/環繞)","duration":"秒數(純數字)","description":"劇情描述(50字內)","dialogue":"對白或旁白(無則空字串)","sound":"聲音音效","seedancePrompt":"給Seedance的中文運鏡描述，含景別、攝影機運動、氛圍、光線","notes":"備註(無則空字串)"}]`;
   try {
     const txt = await callLLM(sys, usr);
@@ -783,7 +828,7 @@ function makeShotCard(shot, i) {
         <div class="shot-field"><label>景別</label><select class="shot-cameraType">${['大遠景','遠景','中景','近景','特寫'].map(v=>`<option ${shot.cameraType===v?'selected':''}>${v}</option>`).join('')}</select></div>
         <div class="shot-field"><label>攝影角度</label><select class="shot-cameraAngle">${['平視','俯角','仰角','傾斜'].map(v=>`<option ${shot.cameraAngle===v?'selected':''}>${v}</option>`).join('')}</select></div>
         <div class="shot-field full"><label>攝影機運動</label><select class="shot-cameraMove">${['靜止','推','拉','橫移','跟拍','升','降','環繞'].map(v=>`<option ${shot.cameraMove===v?'selected':''}>${v}</option>`).join('')}</select></div>
-        <div class="shot-field full"><label>劇情描述</label><textarea class="shot-description">${esc(shot.description||'')}</textarea></div>
+        <div class="shot-field full" style="position:relative"><label>劇情描述</label><textarea class="shot-description" oninput="handleAtInput(event,${i})" onkeydown="handleAtKey(event)">${esc(shot.description||'')}</textarea><div class="at-menu hidden" id="atMenu${i}"></div></div>
         <div class="shot-field full"><label>對白／旁白</label><textarea class="shot-dialogue">${esc(shot.dialogue||'')}</textarea></div>
         <div class="shot-field full"><label>聲音／音效</label><textarea class="shot-sound" style="min-height:44px">${esc(shot.sound||'')}</textarea></div>
         <div class="shot-field full"><label>Seedance Prompt</label><textarea class="shot-seedancePrompt">${esc(shot.seedancePrompt||'')}</textarea></div>
@@ -835,16 +880,46 @@ async function genImg(idx) {
   document.getElementById('loadingText4').textContent = `正在生成 SC-${String(idx+1).padStart(3,'0')} 示意圖…`;
 
   try {
-    // Build image prompt (Chinese is fine for Nano Banana 2)
+    // Build image prompt
     const prompt = buildImgPrompt(shot);
 
-    // Call Nano Banana 2 via generateContent with responseModalities IMAGE
-    // Generate 2 candidates with separate calls (API generates 1 image per call)
+    // Find @mentioned characters and collect their reference images
+    const mentionedChars = getMentionedChars((shot.description||'') + ' ' + (shot.scene||''));
+    const refImageParts = [];
+    for (const char of mentionedChars) {
+      if (char.images) {
+        for (const imgDataUrl of char.images) {
+          if (!imgDataUrl) continue;
+          // Parse data URL: data:image/jpeg;base64,xxxx
+          const match = imgDataUrl.match(/^data:([^;]+);base64,(.+)$/);
+          if (match) {
+            refImageParts.push({ inlineData: { mimeType: match[1], data: match[2] } });
+          }
+        }
+      }
+    }
+
+    // Build character context string for prompt
+    let charContext = '';
+    if (mentionedChars.length > 0) {
+      charContext = '\n角色說明：' + mentionedChars.map(c =>
+        `@${c.tag}（${c.name || ''}${c.desc ? '，' + c.desc : ''}）`
+      ).join('；');
+      if (refImageParts.length > 0) {
+        charContext += '\n請以上方參考圖中的角色外觀為準，保持角色特徵一致。';
+      }
+    }
+
+    const fullPrompt = prompt + charContext;
+
+    // Generate 2 candidates with separate calls
     const candidates = [];
     for (let ci = 0; ci < 2; ci++) {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${IMG_MODEL}:generateContent`;
+      // Build parts: ref images first, then prompt text
+      const userParts = [...refImageParts, { text: fullPrompt }];
       const body = {
-        contents: [{ role:'user', parts:[{ text: prompt }] }],
+        contents: [{ role:'user', parts: userParts }],
         generationConfig: {
           responseModalities: ['TEXT','IMAGE']
         }
@@ -988,8 +1063,161 @@ async function exportExcel() {
   XLSX.writeFile(wb, `${state.projectName||'storyboard'}_分鏡表.xlsx`);
 }
 
+
+// ─── CHARACTER LIBRARY ───
+function renderCharCards() {
+  const container = document.getElementById('charCards');
+  if (!container) return;
+  if (!state.characters_lib || !state.characters_lib.length) {
+    container.innerHTML = `<div style="font-size:12px;color:var(--text3);padding:12px;text-align:center;border:1px dashed var(--border);border-radius:var(--radius)">尚未設定角色 — 點「新增角色」上傳三視圖與設定 @代稱</div>`;
+    return;
+  }
+  container.innerHTML = state.characters_lib.map((char, ci) => `
+    <div class="char-card">
+      <div class="char-card-header">
+        <span class="char-tag">@${esc(char.tag||'角色'+(ci+1))}</span>
+        <input type="text" value="${esc(char.name||'')}" placeholder="角色全名（選填）"
+          style="flex:1;margin:0 8px;font-size:12px;padding:4px 8px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text)"
+          oninput="state.characters_lib[${ci}].name=this.value">
+        <button class="btn btn-danger btn-sm char-del-btn" onclick="deleteChar(${ci})">✕</button>
+      </div>
+      <div class="char-card-body">
+        <div class="char-imgs">
+          ${['正視圖','側視圖','背視圖'].map((label, imgIdx) => `
+            <div class="char-img-slot" onclick="triggerCharImgUpload(${ci},${imgIdx})">
+              ${char.images && char.images[imgIdx]
+                ? `<img src="${char.images[imgIdx]}" alt="${label}"><span class="slot-del" onclick="event.stopPropagation();deleteCharImg(${ci},${imgIdx})">✕</span>`
+                : `<div class="slot-label">${label}<br><span style="font-size:14px">＋</span></div>`}
+            </div>`).join('')}
+        </div>
+        <div class="char-fields">
+          <input type="text" value="${esc(char.tag||'')}" placeholder="@代稱（如 小明、主角A）"
+            style="font-family:var(--font-mono);font-weight:600"
+            oninput="updateCharTag(${ci},this.value)">
+          <textarea placeholder="外觀描述（髮色、服裝、特徵…讓AI更準確）"
+            oninput="state.characters_lib[${ci}].desc=this.value">${esc(char.desc||'')}</textarea>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+function addCharacter() {
+  if (!state.characters_lib) state.characters_lib = [];
+  state.characters_lib.push({ tag: '', name: '', desc: '', images: [null, null, null] });
+  renderCharCards();
+}
+
+function deleteChar(ci) {
+  if (!confirm('確定刪除此角色？')) return;
+  state.characters_lib.splice(ci, 1);
+  renderCharCards();
+}
+
+function updateCharTag(ci, val) {
+  // strip @ if user typed it
+  state.characters_lib[ci].tag = val.replace(/^@/, '');
+}
+
+function triggerCharImgUpload(ci, imgIdx) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const b64 = await fileToBase64(file);
+    if (!state.characters_lib[ci].images) state.characters_lib[ci].images = [null, null, null];
+    state.characters_lib[ci].images[imgIdx] = b64;
+    renderCharCards();
+  };
+  input.click();
+}
+
+function deleteCharImg(ci, imgIdx) {
+  state.characters_lib[ci].images[imgIdx] = null;
+  renderCharCards();
+}
+
+function fileToBase64(file) {
+  return new Promise((res, rej) => {
+    const reader = new FileReader();
+    reader.onload = () => res(reader.result); // full data URL
+    reader.onerror = rej;
+    reader.readAsDataURL(file);
+  });
+}
+
+// Extract @mentions from text, return matching character objects
+function getMentionedChars(text) {
+  if (!state.characters_lib || !state.characters_lib.length) return [];
+  const mentions = [...text.matchAll(/@(\S+)/g)].map(m => m[1].toLowerCase());
+  return state.characters_lib.filter(c => c.tag && mentions.includes(c.tag.toLowerCase()));
+}
+
+// ─── @ MENTION AUTOCOMPLETE ───
+let atMenuShotIdx = -1;
+let atQueryStart = -1;
+
+function handleAtInput(e, shotIdx) {
+  const ta = e.target;
+  const val = ta.value;
+  const pos = ta.selectionStart;
+  // Find last @ before cursor
+  const before = val.slice(0, pos);
+  const atIdx = before.lastIndexOf('@');
+  const menu = document.getElementById('atMenu' + shotIdx);
+  if (!menu) return;
+
+  if (atIdx === -1 || (atIdx > 0 && /\S/.test(val[atIdx-1]))) {
+    menu.classList.add('hidden'); return;
+  }
+  const query = before.slice(atIdx + 1).toLowerCase();
+  const chars = (state.characters_lib || []).filter(c => c.tag && c.tag.toLowerCase().startsWith(query));
+  if (!chars.length) { menu.classList.add('hidden'); return; }
+
+  atMenuShotIdx = shotIdx;
+  atQueryStart = atIdx;
+  menu.classList.remove('hidden');
+  menu.innerHTML = chars.map(c => `
+    <div class="at-item" onmousedown="insertAtTag(event,'${esc(c.tag)}',${shotIdx})">
+      <span class="at-tag">@${esc(c.tag)}</span>
+      <span>${esc(c.name || c.desc?.slice(0,15) || '')}</span>
+    </div>`).join('');
+}
+
+function handleAtKey(e) {
+  // Close menu on Escape
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.at-menu').forEach(m => m.classList.add('hidden'));
+  }
+}
+
+function insertAtTag(e, tag, shotIdx) {
+  e.preventDefault();
+  const menu = document.getElementById('atMenu' + shotIdx);
+  const card = document.querySelectorAll('.shot-card')[shotIdx];
+  if (!card) return;
+  const ta = card.querySelector('.shot-description');
+  if (!ta) return;
+  const val = ta.value;
+  const pos = ta.selectionStart;
+  const before = val.slice(0, pos);
+  const atIdx = before.lastIndexOf('@');
+  const newVal = val.slice(0, atIdx) + '@' + tag + ' ' + val.slice(pos);
+  ta.value = newVal;
+  ta.focus();
+  menu.classList.add('hidden');
+}
+
+// Close menus on click outside
+document.addEventListener('click', () => {
+  document.querySelectorAll('.at-menu').forEach(m => m.classList.add('hidden'));
+});
+
+
 // ─── INIT ───
 loadGIS();
+renderCharCards();
 document.getElementById('projectName').addEventListener('input', e=>{ state.projectName=e.target.value; updateProjName(); });
 setInterval(()=>{ if(state.accessToken&&state.shots.length>0) saveProject(); }, 120000);
 </script>
