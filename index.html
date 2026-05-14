@@ -828,7 +828,7 @@ function makeShotCard(shot, i) {
         <div class="shot-field"><label>景別</label><select class="shot-cameraType">${['大遠景','遠景','中景','近景','特寫'].map(v=>`<option ${shot.cameraType===v?'selected':''}>${v}</option>`).join('')}</select></div>
         <div class="shot-field"><label>攝影角度</label><select class="shot-cameraAngle">${['平視','俯角','仰角','傾斜'].map(v=>`<option ${shot.cameraAngle===v?'selected':''}>${v}</option>`).join('')}</select></div>
         <div class="shot-field full"><label>攝影機運動</label><select class="shot-cameraMove">${['靜止','推','拉','橫移','跟拍','升','降','環繞'].map(v=>`<option ${shot.cameraMove===v?'selected':''}>${v}</option>`).join('')}</select></div>
-        <div class="shot-field full" style="position:relative"><label>劇情描述</label><textarea class="shot-description" oninput="handleAtInput(event,${i})" onkeydown="handleAtKey(event)">${esc(shot.description||'')}</textarea><div class="at-menu hidden" id="atMenu${i}"></div></div>
+        <div class="shot-field full"><label>劇情描述</label><div style="position:relative"><textarea class="shot-description" oninput="handleAtInput(event,${i})" onkeydown="handleAtKey(event)">${esc(shot.description||'')}</textarea><div class="at-menu" id="atMenu${i}" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:200"></div></div></div>
         <div class="shot-field full"><label>對白／旁白</label><textarea class="shot-dialogue">${esc(shot.dialogue||'')}</textarea></div>
         <div class="shot-field full"><label>聲音／音效</label><textarea class="shot-sound" style="min-height:44px">${esc(shot.sound||'')}</textarea></div>
         <div class="shot-field full"><label>Seedance Prompt</label><textarea class="shot-seedancePrompt">${esc(shot.seedancePrompt||'')}</textarea></div>
@@ -885,6 +885,7 @@ async function genImg(idx) {
 
     // Find @mentioned characters and collect their reference images
     const mentionedChars = getMentionedChars((shot.description||'') + ' ' + (shot.scene||''));
+    console.log('[角色偵測]', shot.description, '→ 找到角色:', mentionedChars.map(c=>'@'+c.tag));
     const refImageParts = [];
     for (const char of mentionedChars) {
       if (char.images) {
@@ -900,6 +901,7 @@ async function genImg(idx) {
     }
 
     // Build character context string for prompt
+    console.log('[參考圖數量]', refImageParts.length, '張');
     let charContext = '';
     if (mentionedChars.length > 0) {
       charContext = '\n角色說明：' + mentionedChars.map(c =>
@@ -1150,7 +1152,7 @@ function fileToBase64(file) {
 // Extract @mentions from text, return matching character objects
 function getMentionedChars(text) {
   if (!state.characters_lib || !state.characters_lib.length) return [];
-  const mentions = [...text.matchAll(/@(\S+)/g)].map(m => m[1].toLowerCase());
+  const mentions = [...text.matchAll(/@([^\s\u3001-\u303f\uff00-\uffef,.!? ]+)/g)].map(m => m[1].toLowerCase());
   return state.characters_lib.filter(c => c.tag && mentions.includes(c.tag.toLowerCase()));
 }
 
@@ -1169,7 +1171,7 @@ function handleAtInput(e, shotIdx) {
   if (!menu) return;
 
   if (atIdx === -1 || (atIdx > 0 && /\S/.test(val[atIdx-1]))) {
-    menu.classList.add('hidden'); return;
+    menu.style.display='none'; return;
   }
   const query = before.slice(atIdx + 1).toLowerCase();
   const chars = (state.characters_lib || []).filter(c => c.tag && c.tag.toLowerCase().startsWith(query));
@@ -1177,7 +1179,7 @@ function handleAtInput(e, shotIdx) {
 
   atMenuShotIdx = shotIdx;
   atQueryStart = atIdx;
-  menu.classList.remove('hidden');
+  menu.style.display='block';
   menu.innerHTML = chars.map(c => `
     <div class="at-item" onmousedown="insertAtTag(event,'${esc(c.tag)}',${shotIdx})">
       <span class="at-tag">@${esc(c.tag)}</span>
@@ -1188,7 +1190,7 @@ function handleAtInput(e, shotIdx) {
 function handleAtKey(e) {
   // Close menu on Escape
   if (e.key === 'Escape') {
-    document.querySelectorAll('.at-menu').forEach(m => m.classList.add('hidden'));
+    document.querySelectorAll('.at-menu').forEach(m => m.style.display='none');
   }
 }
 
@@ -1206,12 +1208,12 @@ function insertAtTag(e, tag, shotIdx) {
   const newVal = val.slice(0, atIdx) + '@' + tag + ' ' + val.slice(pos);
   ta.value = newVal;
   ta.focus();
-  menu.classList.add('hidden');
+  menu.style.display='none';
 }
 
 // Close menus on click outside
 document.addEventListener('click', () => {
-  document.querySelectorAll('.at-menu').forEach(m => m.classList.add('hidden'));
+  document.querySelectorAll('.at-menu').forEach(m => m.style.display='none');
 });
 
 
