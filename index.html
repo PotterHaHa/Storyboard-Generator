@@ -176,8 +176,7 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 .candidate-wrap.selected .candidate-check{opacity:1}
 
 /* ── AUTH ── */
-.auth-overlay{position:fixed;inset:0;background:rgba(247,246,243,.96);z-index:200;display:flex;align-items:center;justify-content:center}
-.auth-overlay.hidden{display:none}
+.auth-overlay{position:fixed;inset:0;background:rgba(247,246,243,.96);z-index:500;display:flex;align-items:center;justify-content:center}
 .auth-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:2.5rem;max-width:380px;width:90%;text-align:center;box-shadow:var(--shadow-md)}
 .auth-card h2{font-family:var(--font-display);font-size:1.9rem;font-style:italic;color:var(--text);margin-bottom:.4rem}
 .auth-card p{color:var(--text2);font-size:13px;margin-bottom:1.5rem;line-height:1.7}
@@ -748,13 +747,13 @@ async function fetchUser() {
       authLog('Token 無效：' + u.error.message, '#dc2626');
       sessionStorage.removeItem('gToken');
       state.accessToken = null;
-      document.getElementById('authOverlay').classList.remove('hidden');
+      document.getElementById('authOverlay').style.display='flex';
       return;
     }
 
     authLog('登入成功：' + (u.name||u.email), '#16a34a');
     state.user = u;
-    document.getElementById('authOverlay').classList.add('hidden');
+    document.getElementById('authOverlay').style.display='none';
     document.getElementById('driveBar').style.display = 'flex';
     document.getElementById('userBadge').style.display = 'flex';
     document.getElementById('userAvatar').src = u.picture||'';
@@ -765,7 +764,7 @@ async function fetchUser() {
     authLog('fetchUser 例外：' + e.message, '#dc2626');
     sessionStorage.removeItem('gToken');
     state.accessToken = null;
-    document.getElementById('authOverlay').classList.remove('hidden');
+    document.getElementById('authOverlay').style.display='flex';
   }
 }
 function handleLogout() {
@@ -774,7 +773,7 @@ function handleLogout() {
   }
   sessionStorage.removeItem('gToken');
   state.accessToken = null; state.user = null;
-  document.getElementById('authOverlay').classList.remove('hidden');
+  document.getElementById('authOverlay').style.display='flex';
   document.getElementById('driveBar').style.display = 'none';
   document.getElementById('userBadge').style.display = 'none';
   document.getElementById('logoutBtn').style.display = 'none';
@@ -1311,7 +1310,7 @@ async function exportExcel() {
     s.image ? (s.imageSource === 'uploaded' ? '用戶上傳' : 'AI生成（Nano Banana 2）') : '（尚未生圖）',
     s.cameraType||'', s.cameraAngle||'', s.cameraMove||'', s.duration||'',
     s.description||'', s.dialogue||'', s.sound||'', s.seedancePrompt||'',
-    s.videoPrompt||'', s.notes||''  ''
+    s.videoPrompt||'', s.notes||''
   ])];
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws['!cols']=[{wch:12},{wch:18},{wch:10},{wch:10},{wch:12},{wch:6},{wch:35},{wch:30},{wch:25},{wch:40},{wch:25},{wch:20}];
