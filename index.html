@@ -129,8 +129,7 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
 .shot-header-actions{display:flex;gap:3px}
 .shot-body{display:grid;grid-template-columns:200px 1fr}
 .shot-image-area{border-right:1px solid var(--border);padding:10px;display:flex;flex-direction:column;gap:7px}
-.shot-img-preview{width:100%;aspect-ratio:4/3;background:var(--surface2);border:1px dashed var(--border2);border-radius:4px;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;transition:border-color .15s;position:relative}
-.shot-img-preview:hover{border-color:var(--accent)}
+.shot-img-preview{width:100%;aspect-ratio:4/3;background:var(--surface2);border:1px dashed var(--border2);border-radius:4px;display:flex;align-items:center;justify-content:center;overflow:hidden;transition:border-color .15s;position:relative}
 .shot-img-preview img{width:100%;height:100%;object-fit:cover}
 .shot-img-placeholder{display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--text3);font-size:11px;font-family:var(--font-mono);text-align:center;padding:8px}
 .img-generating-overlay{position:absolute;inset:0;background:rgba(255,255,255,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;font-size:11px;color:var(--accent);font-family:var(--font-mono)}
@@ -1007,7 +1006,7 @@ function makeShotCard(shot, i) {
     : '';
   const imgContent = shot.image
     ? `<img src="${shot.image}" alt="">${sourceBadge}`
-    : `<div class="shot-img-placeholder"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg><span>點擊生成<br>或上傳圖片</span></div>`;
+    : `<div class="shot-img-placeholder"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg><span>尚無示意圖</span></div>`;
   const candHtml = shot.candidates?.length
     ? `<div class="img-candidate-row">${shot.candidates.map((c,ci)=>`<img class="img-candidate ${ci===shot.selectedCandidate?'selected':''}" src="${c}" onclick="selectCand(${i},${ci})">`).join('')}</div>` : '';
   card.setAttribute('draggable','true');
@@ -1025,7 +1024,7 @@ function makeShotCard(shot, i) {
     </div>
     <div class="shot-body">
       <div class="shot-image-area">
-        <div class="shot-img-preview" id="imgPreview${i}" onclick="openImgModal(${i})">${imgContent}</div>
+        <div class="shot-img-preview" id="imgPreview${i}">${imgContent}</div>
         ${candHtml}
       </div>
       <div class="shot-fields">
@@ -1239,9 +1238,38 @@ function renderThumbs() {
           <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 6px" onclick="genImg(${i})" title="AI生圖">✦</button>
           <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 6px;color:var(--green)" onclick="uploadShotImg(${i})" title="上傳圖片">📁</button>
           ${s.image ? `<button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 6px;color:var(--amber)" onclick="regenImg(${i})" title="重新生成">↻</button>` : ''}
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 6px;color:var(--text2)" onclick="goToShot(${i})" title="回分鏡編輯">✏️</button>
         </div>
       </div>
     </div>`).join('');
+}
+
+
+// ─── GO TO SHOT (Step 4 → Step 3) ───
+function goToShot(idx) {
+  // Switch to Step 3
+  goStep(3);
+
+  // Wait for DOM to render, then scroll and highlight
+  setTimeout(() => {
+    const cards = document.querySelectorAll('.shot-card');
+    const target = cards[idx];
+    if (!target) return;
+
+    // Scroll to the card smoothly
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // Highlight with a pulse animation
+    target.style.transition = 'box-shadow 0.2s, border-color 0.2s';
+    target.style.boxShadow = '0 0 0 3px rgba(37,99,235,0.4), 0 4px 20px rgba(37,99,235,0.2)';
+    target.style.borderColor = 'var(--accent)';
+
+    // Remove highlight after 2 seconds
+    setTimeout(() => {
+      target.style.boxShadow = '';
+      target.style.borderColor = '';
+    }, 2000);
+  }, 150);
 }
 
 // ─── EXPORT ───
