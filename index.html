@@ -679,6 +679,16 @@ async function fetchUser() {
   try {
     const r = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', { headers:{ Authorization:'Bearer '+state.accessToken } });
     const u = await r.json();
+
+    // Token expired or invalid
+    if (u.error) {
+      console.warn('Token invalid:', u.error);
+      sessionStorage.removeItem('gToken');
+      state.accessToken = null;
+      document.getElementById('authOverlay').classList.remove('hidden');
+      return;
+    }
+
     state.user = u;
     document.getElementById('authOverlay').classList.add('hidden');
     document.getElementById('driveBar').style.display = 'flex';
@@ -687,10 +697,17 @@ async function fetchUser() {
     document.getElementById('userName').textContent = u.name||u.email;
     document.getElementById('logoutBtn').style.display = 'inline-flex';
     ensureFolder();
-  } catch(e) { console.error(e); }
+  } catch(e) {
+    console.error('fetchUser error:', e);
+    sessionStorage.removeItem('gToken');
+    state.accessToken = null;
+    document.getElementById('authOverlay').classList.remove('hidden');
+  }
 }
 function handleLogout() {
-  google.accounts.oauth2.revoke(state.accessToken);
+  if (state.accessToken) {
+    try { google.accounts.oauth2.revoke(state.accessToken); } catch(e) {}
+  }
   sessionStorage.removeItem('gToken');
   state.accessToken = null; state.user = null;
   document.getElementById('authOverlay').classList.remove('hidden');
