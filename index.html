@@ -326,6 +326,8 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
       使用 Google 帳號登入
     </button>
     <p class="auth-note">資料僅儲存於你自己的 Google Drive</p>
+    <div id="authDebug" style="margin-top:12px;font-size:11px;font-family:monospace;color:#888;text-align:left;background:#f5f5f5;border-radius:4px;padding:8px;display:none"></div>
+    <button onclick="clearAuthAndReload()" style="margin-top:8px;font-size:11px;color:#dc2626;background:none;border:none;cursor:pointer;text-decoration:underline">清除登入紀錄並重新整理</button>
   </div>
 </div>
 
@@ -653,42 +655,104 @@ function setKeyStatus(id, cls, msg) {
 }
 
 // ─── GOOGLE AUTH ───
+function authLog(msg, color) {
+  console.log('[Auth]', msg);
+  const el = document.getElementById('authDebug');
+  if (!el) return;
+  el.style.display = 'block';
+  el.innerHTML += `<div style="color:${color||'#555'}">${new Date().toLocaleTimeString()} ${msg}</div>`;
+}
+
+function clearAuthAndReload() {
+  sessionStorage.removeItem('gToken');
+  sessionStorage.clear();
+  localStorage.removeItem('gToken');
+  authLog('已清除登入紀錄，重新整理中…', '#16a34a');
+  setTimeout(() => location.reload(), 800);
+}
+
 function loadGIS() {
+  authLog('載入 Google GIS script…');
   const s = document.createElement('script');
   s.src = 'https://accounts.google.com/gsi/client';
   s.onload = () => {
-    tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: GOOGLE_CLIENT_ID,
-      scope: DRIVE_SCOPE + ' https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
-      callback: onToken
-    });
+    authLog('GIS script 載入成功', '#16a34a');
+    try {
+      tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: DRIVE_SCOPE + ' https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
+        callback: onToken,
+        error_callback: (err) => {
+          authLog('OAuth 錯誤：' + JSON.stringify(err), '#dc2626');
+        }
+      });
+      authLog('tokenClient 初始化成功', '#16a34a');
+    } catch(e) {
+      authLog('initTokenClient 失敗：' + e.message, '#dc2626');
+    }
     const t = sessionStorage.getItem('gToken');
-    if (t) { state.accessToken = t; fetchUser(); }
+    if (t) {
+      authLog('發現 sessionStorage token，嘗試驗證…');
+      state.accessToken = t;
+      fetchUser();
+    } else {
+      authLog('無 session token，等待使用者登入');
+    }
+  };
+  s.onerror = () => {
+    authLog('GIS script 載入失敗！請確認網路連線', '#dc2626');
   };
   document.head.appendChild(s);
 }
 
-function handleGoogleLogin() { tokenClient.requestAccessToken({ prompt:'consent' }); }
+function handleGoogleLogin() {
+  authLog('點擊登入，呼叫 requestAccessToken…');
+  if (!tokenClient) {
+    authLog('tokenClient 尚未初始化！', '#dc2626');
+    alert('Google 登入尚未準備好，請稍後再試或重新整理頁面');
+    return;
+  }
+  try {
+    tokenClient.requestAccessToken({ prompt: 'consent' });
+  } catch(e) {
+    authLog('requestAccessToken 錯誤：' + e.message, '#dc2626');
+  }
+}
 function onToken(r) {
-  if (r.error) { alert('登入失敗：'+r.error); return; }
+  authLog('onToken 回呼：' + JSON.stringify({error: r.error, has_token: !!r.access_token}));
+  if (r.error) {
+    authLog('Token 錯誤：' + r.error + (r.error_description ? ' - ' + r.error_description : ''), '#dc2626');
+    alert('登入失敗：' + r.error + (r.error_description ? '\n' + r.error_description : ''));
+    return;
+  }
+  if (!r.access_token) {
+    authLog('沒有收到 access_token', '#dc2626');
+    return;
+  }
+  authLog('收到 access_token，儲存並驗證', '#16a34a');
   state.accessToken = r.access_token;
   sessionStorage.setItem('gToken', r.access_token);
   fetchUser();
 }
 async function fetchUser() {
+  authLog('呼叫 userinfo API…');
   try {
-    const r = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', { headers:{ Authorization:'Bearer '+state.accessToken } });
+    const r = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers:{ Authorization:'Bearer '+state.accessToken }
+    });
+    authLog('userinfo HTTP 狀態：' + r.status);
     const u = await r.json();
+    authLog('userinfo 回應：' + JSON.stringify({error: u.error, email: u.email, name: u.name}));
 
-    // Token expired or invalid
     if (u.error) {
-      console.warn('Token invalid:', u.error);
+      authLog('Token 無效：' + u.error.message, '#dc2626');
       sessionStorage.removeItem('gToken');
       state.accessToken = null;
       document.getElementById('authOverlay').classList.remove('hidden');
       return;
     }
 
+    authLog('登入成功：' + (u.name||u.email), '#16a34a');
     state.user = u;
     document.getElementById('authOverlay').classList.add('hidden');
     document.getElementById('driveBar').style.display = 'flex';
@@ -698,7 +762,7 @@ async function fetchUser() {
     document.getElementById('logoutBtn').style.display = 'inline-flex';
     ensureFolder();
   } catch(e) {
-    console.error('fetchUser error:', e);
+    authLog('fetchUser 例外：' + e.message, '#dc2626');
     sessionStorage.removeItem('gToken');
     state.accessToken = null;
     document.getElementById('authOverlay').classList.remove('hidden');
