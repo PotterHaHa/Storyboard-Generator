@@ -571,7 +571,7 @@ select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='ht
   <!-- STEP 4: 生圖 -->
   <div class="panel" id="panel4">
     <div class="panel-title">生成示意圖</div>
-    <div class="panel-sub">使用 Nano Banana 2（gemini-3.1-flash-image-preview）生成 4:3 分鏡示意圖。每格提供 2 張候選圖供選擇。</div>
+    <div class="panel-sub">每格分鏡可選擇 <strong>AI 生成</strong>（Nano Banana 2）或 <strong>自行上傳</strong>圖片。完成後可匯出 Excel 分鏡表。</div>
 
     <div id="noKeyWarning" class="notice warning" style="display:none">
       <strong>⚠ 尚未設定 Gemini API Key</strong> — <span style="cursor:pointer;text-decoration:underline;color:var(--amber)" onclick="goStep(0)">前往 API 設定</span>
@@ -783,6 +783,7 @@ function collectState() {
     ['scene','cameraType','cameraAngle','cameraMove','duration','description','dialogue','sound','seedancePrompt','notes'].forEach(f=>{
       const el=card.querySelector('.shot-'+f); if(el) state.shots[i][f]=el.value;
     });
+    // Preserve imageSource and video fields (not in DOM, already in state)
   });
 }
 
@@ -891,7 +892,7 @@ async function generateShots() {
   try {
     const txt = await callLLM(sys, usr);
     const arr = JSON.parse(txt.replace(/```json|```/g,'').trim());
-    state.shots = arr.map((s,i)=>({...s,id:i+1,image:null,candidates:[],selectedCandidate:0}));
+    state.shots = arr.map((s,i)=>({...s,id:i+1,image:null,imageSource:null,candidates:[],selectedCandidate:0,videoUrl:null,videoDuration:null,videoPrompt:''}));
     renderShots(); goStep(3);
   } catch(e) { alert('分鏡生成失敗：'+e.message); }
   ld.classList.remove('show'); btn.disabled=false;
@@ -919,9 +920,14 @@ function makeInsertZone(idx) {
 
 function makeShotCard(shot, i) {
   const card=document.createElement('div'); card.className='shot-card';
+  const sourceBadge = shot.image
+    ? (shot.imageSource === 'uploaded'
+        ? `<span style="position:absolute;bottom:4px;right:4px;background:rgba(22,163,74,.85);color:#fff;font-size:9px;font-family:var(--font-mono);padding:1px 5px;border-radius:3px">已上傳</span>`
+        : `<span style="position:absolute;bottom:4px;right:4px;background:rgba(37,99,235,.85);color:#fff;font-size:9px;font-family:var(--font-mono);padding:1px 5px;border-radius:3px">AI生成</span>`)
+    : '';
   const imgContent = shot.image
-    ? `<img src="${shot.image}" alt="">`
-    : `<div class="shot-img-placeholder"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg><span>點擊生成<br>示意圖</span></div>`;
+    ? `<img src="${shot.image}" alt="">${sourceBadge}`
+    : `<div class="shot-img-placeholder"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg><span>點擊生成<br>或上傳圖片</span></div>`;
   const candHtml = shot.candidates?.length
     ? `<div class="img-candidate-row">${shot.candidates.map((c,ci)=>`<img class="img-candidate ${ci===shot.selectedCandidate?'selected':''}" src="${c}" onclick="selectCand(${i},${ci})">`).join('')}</div>` : '';
   card.setAttribute('draggable','true');
@@ -931,7 +937,8 @@ function makeShotCard(shot, i) {
       <div class="drag-handle" title="拖曳排序">⠿</div>
       <span class="shot-num">SC-${String(i+1).padStart(3,'0')}</span>
       <div class="shot-header-actions">
-        <button class="btn btn-ghost btn-sm" onclick="genImg(${i})" title="生成示意圖">✦ 生圖</button>
+        <button class="btn btn-ghost btn-sm" onclick="genImg(${i})" title="AI 生成示意圖">✦ 生圖</button>
+        <button class="btn btn-ghost btn-sm" onclick="uploadShotImg(${i})" title="上傳圖片" style="color:var(--green)">📁 上傳</button>
         ${shot.image ? `<button class="btn btn-ghost btn-sm" onclick="regenImg(${i})" title="重新生成" style="color:var(--amber)">↻</button>` : ''}
         <button class="btn btn-ghost btn-sm" style="font-size:15px;padding:3px 7px" onclick="openCtx(event,${i})">⋯</button>
       </div>
@@ -962,7 +969,7 @@ function renum(){state.shots.forEach((s,i)=>s.id=i+1);}
 
 function insertShot(idx) {
   collectState();
-  state.shots.splice(idx,0,{id:0,scene:'',cameraType:'中景',cameraAngle:'平視',cameraMove:'靜止',duration:'3',description:'',dialogue:'',sound:'',seedancePrompt:'',notes:'',image:null,candidates:[],selectedCandidate:0});
+  state.shots.splice(idx,0,{id:0,scene:'',cameraType:'中景',cameraAngle:'平視',cameraMove:'靜止',duration:'3',description:'',dialogue:'',sound:'',seedancePrompt:'',notes:'',image:null,imageSource:null,candidates:[],selectedCandidate:0,videoUrl:null,videoDuration:null,videoPrompt:''});
   renum(); renderShots();
   setTimeout(()=>document.querySelectorAll('.shot-card')[idx]?.scrollIntoView({behavior:'smooth',block:'center'}),100);
 }
@@ -1065,6 +1072,7 @@ async function genImg(idx) {
     state.shots[idx].candidates = candidates;
     state.shots[idx].selectedCandidate = 0;
     state.shots[idx].image = candidates[0];
+    state.shots[idx].imageSource = 'generated';
 
     renderShots();
     renderThumbs();
@@ -1106,6 +1114,7 @@ function selectCand(shotIdx, ci) {
   collectState();
   state.shots[shotIdx].selectedCandidate = ci;
   state.shots[shotIdx].image = state.shots[shotIdx].candidates[ci];
+  state.shots[shotIdx].imageSource = 'generated';
   renderShots();
 }
 
@@ -1126,6 +1135,7 @@ function confirmImgSelect(){
   if(imgModalIdx<0)return;
   state.shots[imgModalIdx].selectedCandidate=imgModalSel;
   state.shots[imgModalIdx].image=state.shots[imgModalIdx].candidates[imgModalSel];
+  state.shots[imgModalIdx].imageSource='generated';
   renderShots(); renderThumbs(); closeImgModal();
 }
 function closeImgModal(){document.getElementById('imgModal').classList.add('hidden');imgModalIdx=-1;}
@@ -1134,12 +1144,22 @@ function closeImgModal(){document.getElementById('imgModal').classList.add('hidd
 function renderThumbs() {
   document.getElementById('shotThumbGrid').innerHTML = state.shots.map((s,i)=>`
     <div class="thumb-item">
-      <div class="thumb-img" onclick="openImgModal(${i})">
-        ${s.image?`<img src="${s.image}" alt="">`:`<div class="no-img">尚無示意圖</div>`}
+      <div class="thumb-img" onclick="openImgModal(${i})" style="position:relative">
+        ${s.image
+          ? `<img src="${s.image}" alt="">
+             <span style="position:absolute;bottom:4px;left:4px;font-size:9px;font-family:var(--font-mono);padding:1px 5px;border-radius:3px;color:#fff;background:${s.imageSource==='uploaded'?'rgba(22,163,74,.85)':'rgba(37,99,235,.85)'}">
+               ${s.imageSource==='uploaded'?'已上傳':'AI生成'}
+             </span>`
+          : `<div class="no-img">尚無示意圖</div>`}
+        ${s.videoUrl ? `<span style="position:absolute;top:4px;right:4px;font-size:9px;font-family:var(--font-mono);padding:1px 5px;border-radius:3px;color:#fff;background:rgba(217,119,6,.9)">▶ 影片</span>` : ''}
       </div>
       <div class="thumb-footer">
         <span style="font-family:var(--font-mono);font-size:10px;color:var(--accent)">SC-${String(i+1).padStart(3,'0')}</span>
-        <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 8px" onclick="genImg(${i})">✦ 生圖</button>
+        <div style="display:flex;gap:2px">
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 6px" onclick="genImg(${i})" title="AI生圖">✦</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 6px;color:var(--green)" onclick="uploadShotImg(${i})" title="上傳圖片">📁</button>
+          ${s.image ? `<button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 6px;color:var(--amber)" onclick="regenImg(${i})" title="重新生成">↻</button>` : ''}
+        </div>
       </div>
     </div>`).join('');
 }
@@ -1175,9 +1195,18 @@ function renderExportPreview() {
       </div>
       <div style="display:grid;grid-template-columns:120px 1fr;gap:0">
         <div style="border-right:1px solid var(--border);padding:8px;display:flex;align-items:center;justify-content:center;background:var(--surface2)">
+          <div style="position:relative">
           ${s.image
-            ? `<img src="${s.image}" style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:3px">`
-            : `<div style="width:100%;aspect-ratio:4/3;background:var(--surface3);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text3);font-family:var(--font-mono)">無圖</div>`}
+            ? `<img src="${s.image}" style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:3px">
+               <span style="position:absolute;bottom:4px;right:4px;font-size:9px;font-family:var(--font-mono);padding:1px 5px;border-radius:3px;color:#fff;background:${s.imageSource==='uploaded'?'rgba(22,163,74,.85)':'rgba(37,99,235,.85)'}">
+                 ${s.imageSource==='uploaded'?'已上傳':'AI生成'}
+               </span>
+               ${s.videoUrl?`<span style="position:absolute;top:4px;left:4px;font-size:9px;font-family:var(--font-mono);padding:1px 5px;border-radius:3px;color:#fff;background:rgba(217,119,6,.9)">▶ 影片</span>`:''}
+              `
+            : `<div style="width:100%;aspect-ratio:4/3;background:var(--surface3);border-radius:3px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;color:var(--text3);font-family:var(--font-mono);gap:4px">
+                 <span>無圖</span>
+               </div>`}
+        </div>
         </div>
         <div style="padding:10px 14px;display:flex;flex-direction:column;gap:5px">
           <div style="font-size:12px;font-weight:500;color:var(--text)">${esc(s.scene||'（無場景描述）')}</div>
@@ -1195,15 +1224,16 @@ async function exportExcel() {
   collectState();
   if (!state.shots.length) { alert('尚無分鏡資料'); return; }
   const wb = XLSX.utils.book_new();
-  const headers = ['鏡頭編號','分鏡圖','景別','攝影角度','攝影機運動','秒數','劇情描述','對白/旁白','聲音/音效','Seedance Prompt','備註'];
+  const headers = ['鏡頭編號','分鏡圖來源','景別','攝影角度','攝影機運動','秒數','劇情描述','對白/旁白','聲音/音效','Seedance Prompt','影片Prompt（預留）','備註'];
   const rows = [headers, ...state.shots.map((s,i)=>[
     `SC-${String(i+1).padStart(3,'0')}`,
-    s.image ? `[已生成，儲存於專案JSON]` : '（尚未生圖）',
+    s.image ? (s.imageSource === 'uploaded' ? '用戶上傳' : 'AI生成（Nano Banana 2）') : '（尚未生圖）',
     s.cameraType||'', s.cameraAngle||'', s.cameraMove||'', s.duration||'',
-    s.description||'', s.dialogue||'', s.sound||'', s.seedancePrompt||'', s.notes||''
+    s.description||'', s.dialogue||'', s.sound||'', s.seedancePrompt||'',
+    s.videoPrompt||'', s.notes||''  ''
   ])];
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:12},{wch:20},{wch:10},{wch:10},{wch:12},{wch:6},{wch:35},{wch:30},{wch:25},{wch:40},{wch:20}];
+  ws['!cols']=[{wch:12},{wch:18},{wch:10},{wch:10},{wch:12},{wch:6},{wch:35},{wch:30},{wch:25},{wch:40},{wch:25},{wch:20}];
   ws['!rows']=[{hpt:28},...state.shots.map(()=>({hpt:60}))];
   XLSX.utils.book_append_sheet(wb, ws, '分鏡表');
   const ws2 = XLSX.utils.aoa_to_sheet([
@@ -1589,6 +1619,45 @@ function applyReorder() {
   renum();
   renderShots();
   closeReorderModal();
+}
+
+
+// ─── UPLOAD SHOT IMAGE ───
+function uploadShotImg(idx) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/jpeg,image/png,image/webp,image/gif';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Validate size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      alert('圖片大小不能超過 10MB');
+      return;
+    }
+
+    collectState();
+
+    // Show loading in preview
+    const preview = document.getElementById('imgPreview' + idx);
+    if (preview) preview.innerHTML = `<div class="img-generating-overlay"><div class="spinner"></div><span>載入圖片中…</span></div>`;
+
+    try {
+      const dataUrl = await fileToBase64(file);
+      state.shots[idx].image = dataUrl;
+      state.shots[idx].imageSource = 'uploaded';
+      // Clear AI candidates when uploading manually
+      state.shots[idx].candidates = [];
+      state.shots[idx].selectedCandidate = 0;
+      renderShots();
+      renderThumbs();
+    } catch(e) {
+      alert('圖片載入失敗：' + e.message);
+      renderShots();
+    }
+  };
+  input.click();
 }
 
 // ─── REGEN IMAGE ───
